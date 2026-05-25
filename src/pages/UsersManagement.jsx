@@ -5,334 +5,315 @@ const API_BASE_URL = "http://localhost:3002/api/v2/users";
 
 function UsersManagement() {
   const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState(null);
+  const [section, setSection] = useState("user"); // "user" or "admin"
   const [formData, setFormData] = useState({
     username: "",
     email: "",
-    password: "",
     role: "user",
+    password: "",
   });
 
-  // Fetch all users
+  const [currentUser, setCurrentUser] = useState(null);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+
+  const checkAuth = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/me`, {
+        credentials: "include",
+      });
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          setCurrentUser(result.data);
+        }
+      }
+    } catch (err) {
+      console.error("Auth check failed:", err);
+    }
+  };
+
   const fetchUsers = async () => {
-    setLoading(true);
-    setError(null);
     try {
       const response = await fetch(API_BASE_URL);
-      if (!response.ok) throw new Error("ไม่สามารถดึงข้อมูลได้");
+      if (!response.ok) throw new Error("Failed to fetch");
       const result = await response.json();
       setUsers(result.data || []);
     } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+      console.error(err);
     }
   };
 
   useEffect(() => {
+    checkAuth();
     fetchUsers();
   }, []);
 
-  // Create new user with bcrypt hash
-  const createUser = async (userData) => {
-    setLoading(true);
-    setError(null);
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    if (!loginEmail || !loginPassword) return;
+
     try {
-      const response = await fetch(`${API_BASE_URL}/hash`, {
+      const response = await fetch(`${API_BASE_URL}/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(userData),
+        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+        credentials: "include",
       });
 
       const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          result.error || result.message || "ไม่สามารถสร้างผู้ใช้ได้",
-        );
+      if (response.ok && result.success) {
+        setCurrentUser(result.user);
+        setLoginEmail("");
+        setLoginPassword("");
+      } else {
+        alert(result.message || "Login failed");
       }
-
-      await fetchUsers();
-      closeModal();
     } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+      console.error("Login error:", err);
+      alert("Login error");
     }
   };
 
-  // Update user
-  const updateUser = async (id, userData) => {
-    setLoading(true);
-    setError(null);
+  const handleLogout = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(userData),
+      await fetch(`${API_BASE_URL}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
       });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || "ไม่สามารถอัพเดทผู้ใช้ได้");
-      }
-
-      await fetchUsers();
-      closeModal();
+      setCurrentUser(null);
+      setSection("user");
     } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+      console.error("Logout error:", err);
     }
   };
 
-  // Delete user
-  const deleteUser = async (id) => {
-    if (!window.confirm("คุณแน่ใจหรือไม่ที่จะลบผู้ใช้นี้?")) return;
+  const [editingUserId, setEditingUserId] = useState(null);
 
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(`${API_BASE_URL}/${id}`, {
-        method: "DELETE",
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || "ไม่สามารถลบผู้ใช้ได้");
-      }
-
-      await fetchUsers();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Handle form submission
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (editingUser) {
-      // Update - don't send password if empty
-      const updateData = { ...formData };
-      if (!updateData.password) delete updateData.password;
-      updateUser(editingUser._id, updateData);
-    } else {
-      // Create
-      createUser(formData);
-    }
-  };
-
-  // Open modal for create
-  const openCreateModal = () => {
-    setEditingUser(null);
-    setFormData({ username: "", email: "", password: "", role: "user" });
-    setIsModalOpen(true);
-  };
-
-  // Open modal for edit
-  const openEditModal = (user) => {
-    setEditingUser(user);
-    setFormData({
-      username: user.username,
-      email: user.email || "",
-      password: "",
-      role: user.role || "user",
-    });
-    setIsModalOpen(true);
-  };
-
-  // Close modal
-  const closeModal = () => {
-    setIsModalOpen(false);
-    setEditingUser(null);
-    setFormData({ username: "", email: "", password: "", role: "user" });
-  };
-
-  // Handle input change
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleEditClick = (user) => {
+    setEditingUserId(user._id);
+    setFormData({
+      username: user.username,
+      email: user.email || "",
+      role: user.role || "user",
+      password: "", // empty so it won't update password unless they type
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingUserId(null);
+    setFormData({ username: "", email: "", role: "user", password: "" });
+  };
+
+  const handleSaveUser = async (e) => {
+    e.preventDefault();
+    try {
+      if (editingUserId) {
+        // Update user
+        const updateData = { ...formData };
+        if (!updateData.password) {
+          delete updateData.password;
+        }
+        const response = await fetch(`${API_BASE_URL}/${editingUserId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updateData),
+        });
+        if (response.ok) {
+          await fetchUsers();
+          handleCancelEdit();
+        } else {
+          alert("Failed to update user");
+        }
+      } else {
+        // Create user
+        const response = await fetch(`${API_BASE_URL}/hash`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        });
+        if (response.ok) {
+          await fetchUsers();
+          handleCancelEdit();
+        } else {
+          alert("Failed to save user");
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteUser = async (id) => {
+    if (!window.confirm("Are you sure?")) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/${id}`, {
+        method: "DELETE",
+      });
+      if (response.ok) {
+        await fetchUsers();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   return (
-    <div className="users-management">
-      <div className="header">
-        <h1>จัดการผู้ใช้งาน (MongoDB + Bcrypt)</h1>
-        <button className="btn btn-primary" onClick={openCreateModal}>
-          + เพิ่มผู้ใช้ใหม่
-        </button>
-      </div>
-
-      {error && (
-        <div className="alert alert-error">
-          <span>❌ {error}</span>
-          <button onClick={() => setError(null)}>×</button>
+    <div className="app-container">
+      <nav className="navbar">
+        <div className="navbar-left">
+          <span>Home</span>
+          <span>Owner</span>
         </div>
-      )}
+        <div className="navbar-right">
+          {currentUser ? (
+            <>
+              <span>{currentUser.email}</span>
+              <button className="btn-login" onClick={handleLogout} style={{backgroundColor: '#e74c3c'}}>Logout</button>
+            </>
+          ) : (
+            <form onSubmit={handleLogin} style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
+              <input 
+                type="text" 
+                placeholder="apple@test.com" 
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+              />
+              <input 
+                type="password" 
+                placeholder=".........." 
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+              />
+              <button type="submit" className="btn-login">Login</button>
+              <button type="button" className="btn-signup">Sign up</button>
+            </form>
+          )}
+        </div>
+      </nav>
 
-      {loading && <div className="loading">กำลังโหลด...</div>}
+      <main className="main-content">
+        <h1 className="title">
+          Generation Thailand<br />React Assessment
+        </h1>
 
-      <div className="table-container">
-        <table className="users-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>ชื่อผู้ใช้</th>
-              <th>อีเมล</th>
-              <th>บทบาท</th>
-              <th>วันที่สร้าง</th>
-              <th>การจัดการ</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.length === 0 ? (
+        <div className="section-buttons">
+          <button 
+            className="btn-section btn-user-section"
+            onClick={() => setSection("user")}
+          >
+            User Section
+          </button>
+          {currentUser && currentUser.role === "admin" && (
+            <button 
+              className="btn-section btn-admin-section"
+              onClick={() => setSection("admin")}
+            >
+              Admin Section
+            </button>
+          )}
+        </div>
+
+        <div className="ai-card">
+          <h3>Ask AI about users</h3>
+          {!currentUser ? (
+            <p>Please log in to use the AI feature</p>
+          ) : (
+            <div className="ai-input-group">
+              <input type="text" placeholder="e.g. &quot;Who are the admins?&quot;" />
+              <button className="btn-ask">Ask</button>
+            </div>
+          )}
+        </div>
+
+        {section === "admin" && (
+          <form className="create-user-form" onSubmit={handleSaveUser}>
+            <input 
+              type="text" 
+              name="username" 
+              placeholder="Username" 
+              value={formData.username}
+              onChange={handleInputChange}
+              required 
+            />
+            <input 
+              type="email" 
+              name="email" 
+              placeholder="Email" 
+              value={formData.email}
+              onChange={handleInputChange}
+              required 
+            />
+            <select 
+              name="role" 
+              value={formData.role} 
+              onChange={handleInputChange}
+            >
+              <option value="user">user</option>
+              <option value="admin">admin</option>
+            </select>
+            <input 
+              type="password" 
+              name="password" 
+              placeholder={editingUserId ? "Leave empty to keep current" : "Password"}
+              value={formData.password}
+              onChange={handleInputChange}
+              required={!editingUserId}
+            />
+            <button type="submit" className="btn-save">
+              {editingUserId ? "Update User" : "Save new user"}
+            </button>
+            {editingUserId && (
+              <button type="button" className="btn-save" onClick={handleCancelEdit} style={{backgroundColor: '#95a5a6'}}>
+                Cancel
+              </button>
+            )}
+          </form>
+        )}
+
+        <div className="table-container">
+          <table className="users-table">
+            <thead>
               <tr>
-                <td colSpan="6" className="text-center">
-                  ไม่มีข้อมูลผู้ใช้
-                </td>
+                <th>Username</th>
+                <th>Email</th>
+                <th>Role</th>
+                {section === "admin" && <th>Action</th>}
               </tr>
-            ) : (
-              users.map((user) => (
+            </thead>
+            <tbody>
+              {users.map((user) => (
                 <tr key={user._id}>
-                  <td className="id-cell" title={user._id}>
-                    {user._id.substring(0, 8)}...
-                  </td>
                   <td>{user.username}</td>
                   <td>{user.email || "-"}</td>
-                  <td>
-                    <span className={`badge badge-${user.role}`}>
-                      {user.role}
-                    </span>
-                  </td>
-                  <td>
-                    {user.createdAt
-                      ? new Date(user.createdAt).toLocaleDateString("th-TH")
-                      : "-"}
-                  </td>
-                  <td className="actions">
-                    <button
-                      className="btn btn-edit"
-                      onClick={() => openEditModal(user)}
-                      disabled={loading}
-                    >
-                      ✏️ แก้ไข
-                    </button>
-                    <button
-                      className="btn btn-delete"
-                      onClick={() => deleteUser(user._id)}
-                      disabled={loading}
-                    >
-                      🗑️ ลบ
-                    </button>
-                  </td>
+                  <td>{user.role}</td>
+                  {section === "admin" && (
+                    <td className="actions">
+                      <button className="btn-edit" onClick={() => handleEditClick(user)}>Edit</button>
+                      <button 
+                        className="btn-delete"
+                        onClick={() => handleDeleteUser(user._id)}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  )}
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Modal */}
-      {isModalOpen && (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>{editingUser ? "แก้ไขผู้ใช้" : "เพิ่มผู้ใช้ใหม่"}</h2>
-              <button className="close-btn" onClick={closeModal}>
-                ×
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit}>
-              <div className="form-group">
-                <label htmlFor="username">ชื่อผู้ใช้ *</label>
-                <input
-                  type="text"
-                  id="username"
-                  name="username"
-                  value={formData.username}
-                  onChange={handleInputChange}
-                  required
-                  placeholder="กรอกชื่อผู้ใช้"
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="email">อีเมล *</label>
-                <input
-                  type="email"
-                  id="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  required
-                  placeholder="กรอกอีเมล"
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="password">
-                  รหัสผ่าน{" "}
-                  {editingUser ? "(เว้นว่างถ้าไม่ต้องการเปลี่ยน)" : "*"}
-                </label>
-                <input
-                  type="password"
-                  id="password"
-                  name="password"
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  required={!editingUser}
-                  minLength={8}
-                  placeholder="กรอกรหัสผ่าน (อย่างน้อย 8 ตัวอักษร)"
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="role">บทบาท *</label>
-                <select
-                  id="role"
-                  name="role"
-                  value={formData.role}
-                  onChange={handleInputChange}
-                  required
-                >
-                  <option value="user">User</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </div>
-
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={closeModal}
-                  disabled={loading}
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={loading}
-                >
-                  {loading
-                    ? "กำลังบันทึก..."
-                    : editingUser
-                      ? "บันทึกการแก้ไข"
-                      : "สร้างผู้ใช้"}
-                </button>
-              </div>
-            </form>
-          </div>
+              ))}
+              {users.length === 0 && (
+                <tr>
+                  <td colSpan={section === "admin" ? 4 : 3} style={{textAlign: "center"}}>No users found</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
-      )}
+      </main>
     </div>
   );
 }
