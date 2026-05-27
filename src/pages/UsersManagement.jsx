@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import "./UsersManagement.css";
 
-const API_BASE_URL = "http://localhost:3002/api/v2/users";
+const API_BASE_URL = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/users`
+  : "http://localhost:3002/api/v2/users";
 
 function UsersManagement() {
   const [users, setUsers] = useState([]);
